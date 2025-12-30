@@ -1,6 +1,7 @@
 import pdb
 from pathlib import Path
 import sys
+
 PROJECT_ROOT = Path(__file__).absolute().parents[0].absolute()
 sys.path.insert(0, str(PROJECT_ROOT))
 import os
@@ -24,15 +25,19 @@ import torch.nn.functional as F
 from transformers import AutoProcessor, CLIPVisionModelWithProjection
 from transformers import CLIPTextModel, CLIPTokenizer
 
-VIT_PATH = "../checkpoints/clip-vit-large-patch14"
-VAE_PATH = "../checkpoints/ootd"
-UNET_PATH = "../checkpoints/ootd/ootd_hd/checkpoint-36000"
-MODEL_PATH = "../checkpoints/ootd"
+VIT_PATH = "/kaggle/input/ootd-dataset-0/clip-vit-large-patch14"
+VAE_PATH = "/kaggle/input/ootd-dataset/checkpoints/ootd"
+UNET_PATH = "/kaggle/input/ootd-dataset/checkpoints/ootd/ootd_hd/checkpoint-36000"
+MODEL_PATH = "/kaggle/input/ootd-dataset/checkpoints/ootd"
+
 
 class OOTDiffusionHD:
 
     def __init__(self, gpu_id):
-        self.gpu_id = 'cuda:' + str(gpu_id)
+        if gpu_id < 0:
+            self.gpu_id = "cpu"
+        else:
+            self.gpu_id = "cuda:" + str(gpu_id)
 
         vae = AutoencoderKL.from_pretrained(
             VAE_PATH,
@@ -53,22 +58,29 @@ class OOTDiffusionHD:
             use_safetensors=True,
         )
 
+        torch_dtype = torch.float16 if self.gpu_id != "cpu" else torch.float32
+        variant = "fp16" if self.gpu_id != "cpu" else None
+
         self.pipe = OotdPipeline.from_pretrained(
             MODEL_PATH,
             unet_garm=unet_garm,
             unet_vton=unet_vton,
             vae=vae,
-            torch_dtype=torch.float16,
-            variant="fp16",
+            torch_dtype=torch_dtype,
+            variant=variant,
             use_safetensors=True,
             safety_checker=None,
             requires_safety_checker=False,
         ).to(self.gpu_id)
 
-        self.pipe.scheduler = UniPCMultistepScheduler.from_config(self.pipe.scheduler.config)
-        
+        self.pipe.scheduler = UniPCMultistepScheduler.from_config(
+            self.pipe.scheduler.config
+        )
+
         self.auto_processor = AutoProcessor.from_pretrained(VIT_PATH)
-        self.image_encoder = CLIPVisionModelWithProjection.from_pretrained(VIT_PATH).to(self.gpu_id)
+        self.image_encoder = CLIPVisionModelWithProjection.from_pretrained(VIT_PATH).to(
+            self.gpu_id
+        )
 
         self.tokenizer = CLIPTokenizer.from_pretrained(
             MODEL_PATH,
@@ -79,54 +91,66 @@ class OOTDiffusionHD:
             subfolder="text_encoder",
         ).to(self.gpu_id)
 
-
     def tokenize_captions(self, captions, max_length):
         inputs = self.tokenizer(
-            captions, max_length=max_length, padding="max_length", truncation=True, return_tensors="pt"
+            captions,
+            max_length=max_length,
+            padding="max_length",
+            truncation=True,
+            return_tensors="pt",
         )
         return inputs.input_ids
 
-
-    def __call__(self,
-                model_type='hd',
-                category='upperbody',
-                image_garm=None,
-                image_vton=None,
-                mask=None,
-                image_ori=None,
-                num_samples=1,
-                num_steps=20,
-                image_scale=1.0,
-                seed=-1,
+    def __call__(
+        self,
+        model_type="hd",
+        category="upperbody",
+        image_garm=None,
+        image_vton=None,
+        mask=None,
+        image_ori=None,
+        num_samples=1,
+        num_steps=20,
+        image_scale=1.0,
+        seed=-1,
     ):
         if seed == -1:
             random.seed(time.time())
             seed = random.randint(0, 2147483647)
-        print('Initial seed: ' + str(seed))
+        print("Initial seed: " + str(seed))
         generator = torch.manual_seed(seed)
 
         with torch.no_grad():
-            prompt_image = self.auto_processor(images=image_garm, return_tensors="pt").to(self.gpu_id)
-            prompt_image = self.image_encoder(prompt_image.data['pixel_values']).image_embeds
+            prompt_image = self.auto_processor(
+                images=image_garm, return_tensors="pt"
+            ).to(self.gpu_id)
+            prompt_image = self.image_encoder(
+                prompt_image.data["pixel_values"]
+            ).image_embeds
             prompt_image = prompt_image.unsqueeze(1)
-            if model_type == 'hd':
-                prompt_embeds = self.text_encoder(self.tokenize_captions([""], 2).to(self.gpu_id))[0]
+            if model_type == "hd":
+                prompt_embeds = self.text_encoder(
+                    self.tokenize_captions([""], 2).to(self.gpu_id)
+                )[0]
                 prompt_embeds[:, 1:] = prompt_image[:]
-            elif model_type == 'dc':
-                prompt_embeds = self.text_encoder(self.tokenize_captions([category], 3).to(self.gpu_id))[0]
+            elif model_type == "dc":
+                prompt_embeds = self.text_encoder(
+                    self.tokenize_captions([category], 3).to(self.gpu_id)
+                )[0]
                 prompt_embeds = torch.cat([prompt_embeds, prompt_image], dim=1)
             else:
-                raise ValueError("model_type must be \'hd\' or \'dc\'!")
+                raise ValueError("model_type must be 'hd' or 'dc'!")
 
-            images = self.pipe(prompt_embeds=prompt_embeds,
-                        image_garm=image_garm,
-                        image_vton=image_vton, 
-                        mask=mask,
-                        image_ori=image_ori,
-                        num_inference_steps=num_steps,
-                        image_guidance_scale=image_scale,
-                        num_images_per_prompt=num_samples,
-                        generator=generator,
+            images = self.pipe(
+                prompt_embeds=prompt_embeds,
+                image_garm=image_garm,
+                image_vton=image_vton,
+                mask=mask,
+                image_ori=image_ori,
+                num_inference_steps=num_steps,
+                image_guidance_scale=image_scale,
+                num_images_per_prompt=num_samples,
+                generator=generator,
             ).images
 
         return images

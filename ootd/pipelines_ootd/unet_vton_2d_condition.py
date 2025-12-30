@@ -30,7 +30,11 @@ from .unet_vton_2d_blocks import (
 
 from diffusers.configuration_utils import ConfigMixin, register_to_config
 from diffusers.loaders import UNet2DConditionLoadersMixin
-from diffusers.utils import USE_PEFT_BACKEND, BaseOutput, deprecate, logging, scale_lora_layers, unscale_lora_layers
+try:
+    from diffusers.utils import USE_PEFT_BACKEND
+except ImportError:
+    USE_PEFT_BACKEND = False
+from diffusers.utils import BaseOutput, deprecate, logging, scale_lora_layers, unscale_lora_layers
 from diffusers.models.activations import get_activation
 from diffusers.models.attention_processor import (
     ADDED_KV_ATTENTION_PROCESSORS,

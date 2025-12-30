@@ -33,9 +33,12 @@ from diffusers.loaders import FromSingleFileMixin, LoraLoaderMixin, TextualInver
 from diffusers.models import AutoencoderKL, UNet2DConditionModel
 from diffusers.models.lora import adjust_lora_scale_text_encoder
 from diffusers.schedulers import KarrasDiffusionSchedulers
+try:
+    from diffusers.utils import USE_PEFT_BACKEND
+except ImportError:
+    USE_PEFT_BACKEND = False
 from diffusers.utils import (
     PIL_INTERPOLATION,
-    USE_PEFT_BACKEND,
     deprecate,
     logging,
     replace_example_docstring,

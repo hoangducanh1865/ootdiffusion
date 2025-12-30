@@ -18,13 +18,89 @@ from typing import Any, Dict, Optional
 import torch
 from torch import nn
 
-from diffusers.utils import USE_PEFT_BACKEND
+try:
+    from diffusers.utils import USE_PEFT_BACKEND
+except ImportError:
+    USE_PEFT_BACKEND = False
 from diffusers.utils.torch_utils import maybe_allow_in_graph
-from diffusers.models.activations import GEGLU, GELU, ApproximateGELU
+import torch.nn.functional as F
+try:
+    from diffusers.models.attention_processor import GEGLU
+except ImportError:
+    class GEGLU(nn.Module):
+        def __init__(self, dim_in, dim_out):
+            super().__init__()
+            self.proj = nn.Linear(dim_in, dim_out * 2)
+
+        def forward(self, x, scale=1.0):
+            x, gate = self.proj(x).chunk(2, dim=-1)
+            return x * F.gelu(gate)
+try:
+    from diffusers.models.activations import GELU, ApproximateGELU
+except ImportError:
+    class GELU(nn.Module):
+        def __init__(self, dim_in, dim_out):
+            super().__init__()
+            self.proj = nn.Linear(dim_in, dim_out)
+
+        def forward(self, x, scale=1.0):
+            return F.gelu(self.proj(x))
+
+    class ApproximateGELU(nn.Module):
+        def __init__(self, dim_in, dim_out, approximate="tanh"):
+            super().__init__()
+            self.proj = nn.Linear(dim_in, dim_out)
+            self.approximate = approximate
+
+        def forward(self, x, scale=1.0):
+            if self.approximate == "tanh":
+                return torch.tanh(0.7978845608 * (self.proj(x) + 0.044715 * torch.pow(self.proj(x), 3)))
+            else:
+                return F.gelu(self.proj(x))
 from diffusers.models.attention_processor import Attention
-from diffusers.models.embeddings import SinusoidalPositionalEmbedding
+try:
+    from diffusers.models.embeddings import SinusoidalPositionalEmbedding
+except ImportError:
+    import math
+    class SinusoidalPositionalEmbedding(nn.Module):
+        def __init__(self, dim, max_seq_length):
+            super().__init__()
+            self.dim = dim
+            self.max_seq_length = max_seq_length
+            pe = torch.zeros(max_seq_length, dim)
+            position = torch.arange(0, max_seq_length, dtype=torch.float).unsqueeze(1)
+            div_term = torch.exp(torch.arange(0, dim, 2).float() * (-math.log(10000.0) / dim))
+            pe[:, 0::2] = torch.sin(position * div_term)
+            pe[:, 1::2] = torch.cos(position * div_term)
+            self.register_buffer('pe', pe)
+
+        def forward(self, x):
+            return x + self.pe[:x.size(1)]
 from diffusers.models.lora import LoRACompatibleLinear
-from diffusers.models.normalization import AdaLayerNorm, AdaLayerNormZero
+
+class AdaLayerNorm(nn.Module):
+    def __init__(self, dim, num_embeds_ada_norm):
+        super().__init__()
+        self.emb = nn.Embedding(num_embeds_ada_norm, dim * 2)
+        self.norm = nn.LayerNorm(dim, elementwise_affine=False)
+
+    def forward(self, x, timestep):
+        emb = self.emb(timestep)
+        scale, shift = emb.chunk(2, dim=-1)
+        x = self.norm(x) * (1 + scale) + shift
+        return x
+
+class AdaLayerNormZero(nn.Module):
+    def __init__(self, dim, num_embeds_ada_norm):
+        super().__init__()
+        self.emb = nn.Embedding(num_embeds_ada_norm, dim * 3)
+        self.norm = nn.LayerNorm(dim, elementwise_affine=False)
+
+    def forward(self, x, timestep, class_labels=None, hidden_dtype=None):
+        emb = self.emb(timestep)
+        shift_msa, scale_msa, shift_mlp = emb.chunk(3, dim=-1)
+        x = self.norm(x) * (1 + scale_msa) + shift_msa
+        return x, shift_msa, scale_msa, shift_mlp
 
 
 @maybe_allow_in_graph

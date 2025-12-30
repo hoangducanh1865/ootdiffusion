@@ -14,7 +14,7 @@ from ootd.inference_ootd_dc import OOTDiffusionDC
 
 import argparse
 parser = argparse.ArgumentParser(description='run ootd')
-parser.add_argument('--gpu_id', '-g', type=int, default=0, required=False)
+parser.add_argument('--gpu_id', '-g', type=int, default=-1, required=False)
 parser.add_argument('--model_path', type=str, default="", required=True)
 parser.add_argument('--cloth_path', type=str, default="", required=True)
 parser.add_argument('--model_type', type=str, default="hd", required=False)

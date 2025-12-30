@@ -23,7 +23,11 @@ from torch import nn
 from .transformer_garm_2d import Transformer2DModel
 
 from diffusers.utils import is_torch_version, logging
-from diffusers.utils.torch_utils import apply_freeu
+try:
+    from diffusers.utils.torch_utils import apply_freeu
+except ImportError:
+    def apply_freeu(resolution_idx, hidden_states, res_hidden_states, s1, s2, b1, b2):
+        return hidden_states, res_hidden_states
 from diffusers.models.activations import get_activation
 from diffusers.models.attention_processor import Attention, AttnAddedKVProcessor, AttnAddedKVProcessor2_0
 from diffusers.models.dual_transformer_2d import DualTransformer2DModel

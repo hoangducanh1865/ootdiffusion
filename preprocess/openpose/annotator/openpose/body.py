@@ -18,9 +18,11 @@ from .model import bodypose_model
 
 
 class Body(object):
-    def __init__(self, model_path):
+    def __init__(self, model_path, gpu_id=0):
+        self.gpu_id = gpu_id
         self.model = bodypose_model()
-        if torch.cuda.is_available():
+        self.model.load_state_dict(torch.load(model_path, map_location='cpu'))
+        if self.gpu_id >= 0 and torch.cuda.is_available():
             self.model = self.model.cuda()
         #     print('cuda')
         model_dict = util.transfer(self.model, torch.load(model_path))
@@ -48,7 +50,7 @@ class Body(object):
             im = np.ascontiguousarray(im)
 
             data = torch.from_numpy(im).float()
-            if torch.cuda.is_available():
+            if self.gpu_id >= 0 and torch.cuda.is_available():
                 data = data.cuda()
             # data = data.permute([2, 0, 1]).unsqueeze(0).float()
             with torch.no_grad():

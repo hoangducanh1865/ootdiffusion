@@ -24,12 +24,24 @@ from .attention_garm import BasicTransformerBlock
 
 from diffusers.configuration_utils import ConfigMixin, register_to_config
 from diffusers.models.embeddings import ImagePositionalEmbeddings
-from diffusers.utils import USE_PEFT_BACKEND, BaseOutput, deprecate
+try:
+    from diffusers.utils import USE_PEFT_BACKEND
+except ImportError:
+    USE_PEFT_BACKEND = False
+from diffusers.utils import BaseOutput, deprecate
 # from diffusers.models.attention import BasicTransformerBlock
-from diffusers.models.embeddings import CaptionProjection, PatchEmbed
+from diffusers.models.embeddings import PatchEmbed
+class CaptionProjection(nn.Module):
+    def __init__(self, in_features, hidden_size):
+        super().__init__()
+        self.linear = nn.Linear(in_features, hidden_size)
+
+    def forward(self, x):
+        return self.linear(x)
 from diffusers.models.lora import LoRACompatibleConv, LoRACompatibleLinear
 from diffusers.models.modeling_utils import ModelMixin
-from diffusers.models.normalization import AdaLayerNormSingle
+class AdaLayerNormSingle(nn.LayerNorm):
+    pass
 
 
 @dataclass

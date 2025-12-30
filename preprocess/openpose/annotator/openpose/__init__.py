@@ -43,7 +43,8 @@ def draw_pose(pose, H, W, draw_body=True, draw_hand=True, draw_face=True):
 
 
 class OpenposeDetector:
-    def __init__(self):
+    def __init__(self, gpu_id=0):
+        self.gpu_id = gpu_id
         body_modelpath = os.path.join(annotator_ckpts_path, "body_pose_model.pth")
         # hand_modelpath = os.path.join(annotator_ckpts_path, "hand_pose_model.pth")
         # face_modelpath = os.path.join(annotator_ckpts_path, "facenet.pth")
@@ -60,7 +61,7 @@ class OpenposeDetector:
         #     from basicsr.utils.download_util import load_file_from_url
         #     load_file_from_url(face_model_path, model_dir=annotator_ckpts_path)
 
-        self.body_estimation = Body(body_modelpath)
+        self.body_estimation = Body(body_modelpath, self.gpu_id)
         # self.hand_estimation = Hand(hand_modelpath)
         # self.face_estimation = Face(face_modelpath)
 
